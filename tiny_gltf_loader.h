@@ -51,6 +51,8 @@
 #include <string>
 #include <vector>
 
+#include "./picojson.h"
+
 namespace tinygltf {
 
 #define TINYGLTF_MODE_POINTS (0)
@@ -142,6 +144,8 @@ namespace tinygltf {
 #define TINYGLTF_SHADER_TYPE_VERTEX_SHADER (35633)
 #define TINYGLTF_SHADER_TYPE_FRAGMENT_SHADER (35632)
 
+typedef std::map<std::string, picojson::value> ExtraMap;
+
 typedef struct {
   std::string string_value;
   std::vector<double> number_array;
@@ -153,12 +157,16 @@ typedef struct {
   std::string sampler;
   std::string target_id;
   std::string target_path;
+
+  ExtraMap extras;
 } AnimationChannel;
 
 typedef struct {
   std::string input;
   std::string interpolation;
   std::string output;
+
+  ExtraMap extras;
 } AnimationSampler;
 
 typedef struct {
@@ -166,6 +174,8 @@ typedef struct {
   std::vector<AnimationChannel> channels;
   std::map<std::string, AnimationSampler> samplers;
   ParameterMap parameters;
+
+  ExtraMap extras;
 } Animation;
 
 typedef struct {
@@ -176,6 +186,8 @@ typedef struct {
   int wrapT;
   int wrapR;  // TinyGLTF extension
   int pad0;
+
+  ExtraMap extras;
 } Sampler;
 
 typedef struct {
@@ -188,6 +200,8 @@ typedef struct {
 
   std::string bufferView;  // KHR_binary_glTF extenstion.
   std::string mimeType;    // KHR_binary_glTF extenstion.
+
+  ExtraMap extras;
 } Image;
 
 typedef struct {
@@ -198,12 +212,16 @@ typedef struct {
   int target;
   int type;
   std::string name;
+
+  ExtraMap extras;
 } Texture;
 
 typedef struct {
   std::string name;
   std::string technique;
   ParameterMap values;
+
+  ExtraMap extras;
 } Material;
 
 typedef struct {
@@ -213,6 +231,8 @@ typedef struct {
   size_t byteLength;   // default: 0
   int target;
   int pad0;
+
+  ExtraMap extras;
 } BufferView;
 
 typedef struct {
@@ -227,6 +247,8 @@ typedef struct {
   int pad1;
   std::vector<double> minValues;  // Optional
   std::vector<double> maxValues;  // Optional
+
+  ExtraMap extras;
 } Accessor;
 
 class Camera {
@@ -242,6 +264,9 @@ class Camera {
   float yFov;
   float zFar;
   float zNear;
+
+  // Not parsed, so there is no need to add this now.
+  // ExtraMap extras;
 };
 
 typedef struct {
@@ -254,11 +279,15 @@ typedef struct {
   std::string indices;   // The ID of the accessor that contains the indices.
   int mode;              // one of TINYGLTF_MODE_***
   int pad0;
+
+  ExtraMap extras;
 } Primitive;
 
 typedef struct {
   std::string name;
   std::vector<Primitive> primitives;
+
+  ExtraMap extras;
 } Mesh;
 
 class Node {
@@ -275,11 +304,15 @@ class Node {
   std::vector<double> translation;  // length must be 0 or 3
   std::vector<double> matrix;       // length must be 0 or 16
   std::vector<std::string> meshes;
+
+  ExtraMap extras;
 };
 
 typedef struct {
   std::string name;
   std::vector<unsigned char> data;
+
+  ExtraMap extras;
 } Buffer;
 
 typedef struct {
@@ -287,6 +320,8 @@ typedef struct {
   int type;
   int pad0;
   std::vector<unsigned char> source;
+
+  ExtraMap extras;
 } Shader;
 
 typedef struct {
@@ -294,6 +329,8 @@ typedef struct {
   std::string vertexShader;
   std::string fragmentShader;
   std::vector<std::string> attributes;
+
+  ExtraMap extras;
 } Program;
 
 typedef struct {
@@ -304,6 +341,8 @@ typedef struct {
   int type;
   int pad1;
   Parameter value;
+
+  ExtraMap extras;
 } TechniqueParameter;
 
 typedef struct {
@@ -312,6 +351,8 @@ typedef struct {
   std::map<std::string, TechniqueParameter> parameters;
   std::map<std::string, std::string> attributes;
   std::map<std::string, std::string> uniforms;
+
+  ExtraMap extras;
 } Technique;
 
 typedef struct {
@@ -321,6 +362,8 @@ typedef struct {
   std::string profile_version;
   bool premultipliedAlpha;
   char pad[7];
+
+  ExtraMap extras;
 } Asset;
 
 class Scene {
@@ -344,6 +387,8 @@ class Scene {
   std::map<std::string, std::vector<std::string> > scenes;  // list of nodes
 
   std::string defaultScene;
+
+  ExtraMap extras;
 
   Asset asset;
 };
@@ -432,7 +477,6 @@ class TinyGLTFLoader {
 #pragma clang diagnostic ignored "-Wpadded"
 #endif
 
-#include "./picojson.h"
 #include "./stb_image.h"
 #ifdef TINYGLTF_APPLY_CLANG_WEVERYTHING
 #pragma clang diagnostic pop
@@ -841,6 +885,21 @@ static bool DecodeDataURI(std::vector<unsigned char> *out,
   return true;
 }
 
+static bool ParseExtras(ExtraMap *extras, std::string *err,
+                        const picojson::object &o, bool required = false) {
+  picojson::object::const_iterator it = o.find("extras");
+  if (it != o.end()) {
+    *extras = it->second.get<picojson::object>();
+	return true;
+  }
+  else if (required) {
+    if(err) {
+      (*err) += "extras property not found or not an object";
+    }
+  }
+  return false;
+}
+
 static bool ParseBooleanProperty(bool *ret, std::string *err,
                                  const picojson::object &o,
                                  const std::string &property, bool required) {
@@ -1138,6 +1197,8 @@ static bool ParseAsset(Asset *asset, std::string *err,
     }
   }
 
+  ParseExtras(&asset->extras, err, o);
+
   return true;
 }
 
@@ -1151,6 +1212,8 @@ static bool ParseImage(Image *image, std::string *err,
   }
 
   ParseStringProperty(&image->name, err, o, "name", false);
+
+  ParseExtras(&image->extras, err, o);
 
   std::vector<unsigned char> img;
 
@@ -1261,6 +1324,8 @@ static bool ParseTexture(Texture *texture, std::string *err,
   double type = TINYGLTF_TEXTURE_TYPE_UNSIGNED_BYTE;
   ParseNumberProperty(&type, err, o, "type", false);
 
+  ParseExtras(&texture->extras, err, o);
+
   texture->format = static_cast<int>(format);
   texture->internalFormat = static_cast<int>(internalFormat);
   texture->target = static_cast<int>(target);
@@ -1278,6 +1343,8 @@ static bool ParseBuffer(Buffer *buffer, std::string *err,
   if (!ParseNumberProperty(&byteLength, err, o, "byteLength", true)) {
     return false;
   }
+
+  ParseExtras(&buffer->extras, err, o);
 
   std::string uri;
   if (!ParseStringProperty(&uri, err, o, "uri", true)) {
@@ -1393,6 +1460,8 @@ static bool ParseBufferView(BufferView *bufferView, std::string *err,
   bufferView->byteOffset = static_cast<size_t>(byteOffset);
   bufferView->byteLength = static_cast<size_t>(byteLength);
 
+  ParseExtras(&bufferView->extras, err, o);
+
   return true;
 }
 
@@ -1477,6 +1546,8 @@ static bool ParseAccessor(Accessor *accessor, std::string *err,
     }
   }
 
+  ParseExtras(&accessor->extras, err, o);
+
   return true;
 }
 
@@ -1508,6 +1579,8 @@ static bool ParsePrimitive(Primitive *primitive, std::string *err,
     return false;
   }
 
+  ParseExtras(&primitive->extras, err, o);
+
   return true;
 }
 
@@ -1528,6 +1601,8 @@ static bool ParseMesh(Mesh *mesh, std::string *err, const picojson::object &o) {
       }
     }
   }
+
+  ParseExtras(&mesh->extras, err, o);
 
   return true;
 }
@@ -1558,6 +1633,8 @@ static bool ParseNode(Node *node, std::string *err, const picojson::object &o) {
       node->children.push_back(childrenNode);
     }
   }
+
+  ParseExtras(&node->extras, err, o);
 
   return true;
 }
@@ -1615,6 +1692,8 @@ static bool ParseMaterial(Material *material, std::string *err,
       }
     }
   }
+
+  ParseExtras(&material->extras, err, o);
 
   return true;
 }
@@ -1705,6 +1784,8 @@ static bool ParseShader(Shader *shader, std::string *err,
 
   shader->type = static_cast<int>(type);
 
+  ParseExtras(&shader->extras, err, o);
+
   return true;
 }
 
@@ -1725,6 +1806,8 @@ static bool ParseProgram(Program *program, std::string *err,
   // really make sense without it.
   ParseStringArrayProperty(&program->attributes, err, o, "attributes", false);
 
+  ParseExtras(&program->extras, err, o);
+
   return true;
 }
 
@@ -1742,6 +1825,8 @@ static bool ParseTechniqueParameter(TechniqueParameter *param, std::string *err,
   ParseStringProperty(&param->semantic, err, o, "semantic", false);
 
   ParseParameterProperty(&param->value, err, o, "value", false);
+
+  ParseExtras(&param->extras, err, o);
 
   param->count = static_cast<int>(count);
   param->type = static_cast<int>(type);
@@ -1787,6 +1872,8 @@ static bool ParseTechnique(Technique *technique, std::string *err,
     }
   }
 
+  ParseExtras(&technique->extras, err, o);
+
   return true;
 }
 
@@ -1820,6 +1907,8 @@ static bool ParseAnimationChannel(AnimationChannel *channel, std::string *err,
       return false;
     }
   }
+
+  ParseExtras(&channel->extras, err, o);
 
   return true;
 }
@@ -1878,6 +1967,8 @@ static bool ParseAnimation(Animation *animation, std::string *err,
           return false;
         }
 
+        ParseExtras(&sampler.extras, err, s);
+
         animation->samplers[it->first] = sampler;
       }
     }
@@ -1902,6 +1993,8 @@ static bool ParseAnimation(Animation *animation, std::string *err,
   }
   ParseStringProperty(&animation->name, err, o, "name", false);
 
+  ParseExtras(&animation->extras, err, o);
+
   return true;
 }
 
@@ -1923,6 +2016,8 @@ static bool ParseSampler(Sampler *sampler, std::string *err,
   sampler->magFilter = static_cast<int>(magFilter);
   sampler->wrapS = static_cast<int>(wrapS);
   sampler->wrapT = static_cast<int>(wrapT);
+
+  ParseExtras(&sampler->extras, err, o);
 
   return true;
 }
@@ -2281,6 +2376,10 @@ bool TinyGLTFLoader::LoadFromString(Scene *scene, std::string *err,
       scene->samplers[it->first] = sampler;
     }
   }
+
+  // 16. Parse Extras
+  ParseExtras(&scene->extras, err, v.get<picojson::object>());
+
   return true;
 }
 
